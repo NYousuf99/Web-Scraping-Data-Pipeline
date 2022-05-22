@@ -7,9 +7,9 @@ setup(
     description='Package which finds jobs using linkedin',
     # url='https://github.com/IvanYingX/project_structure_pypi.git', # Add the URL of your github repo if published 
                                                                    # in GitHub
-    author='Nasir Yousuf', # Your name
-    license='MIT',
-    packages=find_packages(), # This one is important to explain. See the notebook for a detailed explanation
+    author='Nasir Yousuf', # Your name 
+    #license='MIT',
+    packages= find_packages(), # This one is important to explain. See the notebook for a detailed explanation
     install_requires=['webdriver', 'Selenium'], # For this project we are using two external libraries
                                                      # Make sure to include all external libraries in this argument
 )
