@@ -1,0 +1,8 @@
+DATABASE: postgres
+DATABASE_TYPE: postgresql
+DBAPI: psycopg2
+HOST: may-test.chnnx18tdpum.us-east-1.rds.amazonaws.com
+PASSWORD: Mohamed1-2-3
+PORT: 5432
+RDS TABLE NAME: first bucket
+USER: postgres

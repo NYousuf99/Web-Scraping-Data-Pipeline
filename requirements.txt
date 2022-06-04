@@ -1,0 +1,8 @@
+selenium
+boto3
+pandas
+webdriver-manager
+psycopg2-binary 
+sqlalchemy
+typing_extensions
+pyYaml

@@ -1,2 +1,0 @@
-scraper_package
-test

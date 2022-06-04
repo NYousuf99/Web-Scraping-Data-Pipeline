@@ -4,15 +4,17 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
 from selenium.common.exceptions import NoSuchElementException
-import time
+from selenium.common.exceptions import ElementNotInteractableException
+from selenium.webdriver import ChromeOptions 
 import pandas as pd 
 from webdriver_manager.chrome import ChromeDriverManager # type: ignore
-import uuid
-import json
-import jsonpickle 
-from json import JSONEncoder
+# import json
+# import jsonpickle 
+# from json import JSONEncoder
+from sqlalchemy import create_engine
+import yaml
+import time
 
 
 class Scraper:
@@ -29,11 +31,29 @@ class Scraper:
     driver:
         This is the webdriver object
     '''
-    def __init__(self, url : str = 'https://www.linkedin.com'):
-        self.driver = webdriver.Chrome(ChromeDriverManager().install())
+    def __init__(self, url : str = 'https://www.linkedin.com', creds: str = 'rds_cred.yaml'):
+        chrome_options = ChromeOptions()
+        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')  
+        chrome_options.add_argument("--window-size=1200,767")
+        self.driver = webdriver.Chrome(ChromeDriverManager().install(), options = chrome_options)
         self.driver.get(url)
-        self.driver.maximize_window
-        time.sleep(2)
+
+        with open(creds, 'r') as f:
+            creds = yaml.safe_load(f)
+
+        DATABASE_TYPE = creds['DATABASE_TYPE']
+        DBAPI = creds['DBAPI']
+        HOST = creds['HOST']
+        USER = creds['USER']
+        PASSWORD = creds['PASSWORD']
+        DATABASE = creds['DATABASE']
+        PORT = creds['PORT']
+        self.engine = create_engine(f"{DATABASE_TYPE}+{DBAPI}://{USER}:{PASSWORD}@{HOST}:{PORT}/{DATABASE}")
+        self.df = pd.read_sql('First_bucket',self.engine)
+        self.JobID = list(self.df['UUID'])
+        
 
     def accept_cookies(self,xpath: str = '//*[@id="artdeco-global-alert-container"]/div/section/div/div[2]/button[2]') -> None:
         ''' This method looks for and clicks on the accept cookies button
@@ -46,7 +66,7 @@ class Scraper:
         try:
             WebDriverWait(self.driver,15).until(EC.presence_of_element_located)
             self.driver.find_element(By.XPATH,xpath).click()
-        except TimeoutException:
+        except NoSuchElementException:
             print('No cookies found')
 
     def user_name(self,xpath:str = '//*[@id="session_key"]') -> None:
@@ -62,6 +82,7 @@ class Scraper:
         username = self.driver.find_element(By.XPATH, xpath)
         my_username = input("Enter Username:  ")
         username.send_keys(my_username)
+
 
 
     def pass_word(self,xpath:str = '//*[@id="session_password"]') -> None :
@@ -82,7 +103,7 @@ class Scraper:
         password.send_keys(Keys.RETURN)
     
 
-    def job_search(self,xpath: str = '//*[@id="global-nav-typeahead"]/input') -> None:
+    def job_search(self,xpath: str = '/html/body/div[7]/header/div/div/div/div[1]/input') -> None:
         ''' 
         looks for the search bar given in the xpath 
         
@@ -95,17 +116,14 @@ class Scraper:
 
             
             '''
-
-        try:
-            time.sleep(0.5)
-            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located)
-            engine = self.driver.find_element(By.XPATH , xpath)
-            job_text = input("Enter job role:  ")
-            engine.send_keys(job_text) 
-            engine.send_keys(Keys.RETURN)
-            
-        except:
-            print('pass')
+    
+        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located)
+        engine = self.driver.find_element(By.XPATH , xpath)
+        job_text = input("Enter job role:  ")
+        engine.send_keys(job_text) 
+        time.sleep(2)
+        engine.send_keys(Keys.RETURN)
+        time.sleep(2)
 
     def enter_jobs(self,xpath: str = '//*[@id="search-reusables__filters-bar"]/ul/li[1]/button') -> None:
         ''' 
@@ -115,16 +133,17 @@ class Scraper:
         ----------
         xpath:str 
             The xpath of the search bar
-
-            '''
+          
+          '''
         time.sleep(5)
         try:
-            WebDriverWait(self.driver,20).until(EC.presence_of_element_located)
+            WebDriverWait(self.driver,100).until(EC.presence_of_element_located)
             enter = self.driver.find_element(By.XPATH,xpath)
-            enter.send_keys(Keys.RETURN)
-        except:
-            print('No enter button')
+            enter.click()
+        except NoSuchElementException:
+            self.driver.find_element(By.LINK_TEXT, 'Jobs').click()
         time.sleep(3)
+       
     
 
     def info_scrape(self) -> None:
@@ -132,92 +151,79 @@ class Scraper:
         Finds container for page numbers and container for the jobs of each page and scrapes the information and appends to a dictionary
 
         '''
-
-        
-       job_dict = {
+        job_dict = {
         'UUID':[],
         'Link': [],
         'Title': [],
         'Location': [],} #type:dict
-    try:
-        lp = self.driver.find_elements(By.XPATH,'/html/body/div[7]/div[3]/div[3]/div[2]/div/section[1]/div/div/section/div/ul/li')[-1] #finds the final page number and turns data type into an int
-        nn = int(lp.find_element(By.XPATH,'./button/span').text)
+
+        time.sleep(2)
+        lp = self.driver.find_elements(By.XPATH,'/html/body/div[7]/div[3]/div[4]/div/div/main/div/section[1]/div/div[7]/ul/li')[-1] #finds the final page number and turns data type into an int
+        nn = int(lp.text)
         if nn <= 10:
             n = nn 
         elif nn > 10:
             n = nn +2
-    except NoSuchElementException:
-        lp = self.driver.find_elements(By.XPATH,'/html/body/div[6]/div[3]/div[3]/div[2]/div/section[1]/div/div/section/div/ul/li')[-1] #finds the final page number and turns data type into an int
-        nn = int(lp.find_element(By.XPATH,'./button/span').text)
-        if nn < 10:
-            n = nn 
-        elif nn > 10:
-            n = nn +2
-    for i in range(n):
-        time.sleep(0.5)
-        try:
-            number_container = self.driver.find_element(By.XPATH,'/html/body/div[6]/div[3]/div[3]/div[2]/div/section[1]/div/div/section/div/ul') # Finds the container for the page numbers
-            pages = number_container.find_elements(By.XPATH, './li') #Finds each element in the container 
-        except NoSuchElementException:
-            number_container = self.driver.find_element(By.XPATH,'/html/body/div[7]/div[3]/div[3]/div[2]/div/section[1]/div/div/section/div/ul')
-            pages = number_container.find_elements(By.XPATH, './li')
-        if i == 0:
-            pass
-        elif 0< i and i<9:
-            time.sleep(0.5)
-            pages[i].click()
-        elif 9<i and i<range(n)[-8] :
-            time.sleep(0.5)
-            pages[6].click()
-        elif i> range(n)[-8]:
-            time.sleep(0.5)
-            pages[i-range(n)[-10]].click()
-        try:
-            for i in range(25):
-                time.sleep(1)
-                try:
-                    container = self.driver.find_element(By.XPATH,'/html/body/div[7]/div[3]/div[3]/div[2]/div/section[1]/div/div/ul') # Finds the container for the jobs 
+        for i in range(n):
+            time.sleep(2)
+            try:
+                number_container = self.driver.find_element(By.XPATH,'/html/body/div[7]/div[3]/div[4]/div/div/main/div/section[1]/div/div[7]/ul') # Finds the container for the page numbers
+                pages = number_container.find_elements(By.TAG_NAME, 'li') #Finds each element in the container 
+            except NoSuchElementException:
+                number_container = self.driver.find_element(By.XPATH,'/html/body/div[7]/div[3]/div[4]/div/div/main/div/section[1]/div/div[6]/ul') # Finds the container for the page numbers
+                pages = number_container.find_elements(By.TAG_NAME, 'li') #Finds each element in the container 
+            if i == 0:
+                pass
+            elif 0< i and i<9:
+                time.sleep(0.5)
+                pages[i].click()
+            elif 9<i and i<range(n)[-8] :
+                time.sleep(0.5)
+                pages[6].click()
+            elif i> range(n)[-8]:
+                time.sleep(0.5)
+                pages[i-range(n)[-10]].click()
+            try:
+                for j in range(25):
+                    time.sleep(1)
+                    container = self.driver.find_element(By.XPATH,'/html/body/div[7]/div[3]/div[4]/div/div/main/div/section[1]/div/ul') # Finds the container for the jobs 
                     job_list = container.find_elements(By.XPATH,'./li') # Finds each element in the container 
-                except NoSuchElementException:
-                    container = self.driver.find_element(By.XPATH,'/html/body/div[6]/div[3]/div[3]/div[2]/div/section[1]/div/div/ul')
-                    job_list = container.find_elements(By.XPATH,'./li')
-                job_list[i].find_element(By.TAG_NAME,'a').click()
-                job_id = job_list[i].get_attribute('data-occludable-job-id')
-                if job_id in job_dict['UUID']:
-                    pass
-                else:
-                    job_dict['UUID'].append(job_id)
-                    try:
-                        time.sleep(0.2)
-                        links = job_list[i].find_element(By.TAG_NAME, 'a').get_attribute('href')
-                        job_dict['Link'].append(links)     
-                    except NoSuchElementException:
-                        job_dict['Link'].append('No Link found')
-                    try:
-                        time.sleep(0.2)
-                        title = self.driver.find_element(By.XPATH, '/html/body/div[7]/div[3]/div[3]/div[2]/div/section[2]/div/div/div[1]/div/div[1]/div/div[2]/a/h2')
-                        job_dict['Title'].append(title.text)
-                    except NoSuchElementException:
-                        title = self.driver.find_element(By.TAG_NAME, 'h1')
-                        job_dict['Title'].append(title.text)
-                    try:
-                        time.sleep(0.2)
-                        location = self.driver.find_element(By.XPATH, '/html/body/div[6]/div[3]/div[3]/div[2]/div/section[2]/div/div/div[1]/div/div[1]/div/div[2]/div[1]/span[1]/span[2]')
-                        job_dict['Location'].append(location.text)
-                    except NoSuchElementException:
-                        location = self.driver.find_element(By.XPATH, '/html/body/div[7]/div[3]/div[3]/div[2]/div/section[2]/div/div/div[1]/div/div[1]/div/div[2]/div[1]/span[1]/span[2]')
-                        job_dict['Location'].append(location.text)
-        except IndexError:
-            pass
-        Job_json = jsonpickle.encode(job_dict)
-        with open(input("Enter json file name:  "), mode ='w') as jsonFile:
-            json.dump(Job_json,jsonFile)
-    
-    def data_edit(self):
-        with open(input("Enter saved json file name:  "), 'r') as filename: 
-            json_file=json.load(filename)
-        df = pd.read_json(json_file)
-        print(df)
+                    job_list[j].click()
+                    job_id = job_list[j].get_attribute('data-occludable-job-id')
+                    if job_id in job_dict['UUID'] or job_id in self.JobID :
+                        pass
+                    else:
+                        job_dict['UUID'].append(job_id)
+                        try:
+                            time.sleep(0.2)
+                            links = job_list[j].find_element(By.TAG_NAME, 'a').get_attribute('href')
+                            job_dict['Link'].append(links)     
+                        except NoSuchElementException:
+                            job_dict['Link'].append('No Link found')
+                        try:
+                            time.sleep(0.2)
+                            tabel = self.driver.find_element(By.XPATH,'/html/body/div[7]/div[3]/div[4]/div/div/main/div/section[2]')
+                            title = tabel.find_element(By.TAG_NAME, 'h2').text
+                            job_dict['Title'].append(title)
+                        except NoSuchElementException:
+                            tabel = self.driver.find_element(By.XPATH,'/html/body/div[7]/div[3]/div[4]/div/div/main/div/section[2]')
+                            title = tabel.find_element(By.TAG_NAME, 'h1').text
+                            job_dict['Title'].append(title)
+                        try:
+                            time.sleep(0.2)
+                            tabel = self.driver.find_element(By.XPATH,'/html/body/div[7]/div[3]/div[4]/div/div/main/div/section[2]')
+                            location = tabel.find_elements(By.TAG_NAME, 'span')
+                            job_dict['Location'].append(location[4].text)
+                        except NoSuchElementException:
+                            job_dict['Location'].append('No Location found')
+            except IndexError:
+                pass
+        JobPd= pd.DataFrame.from_dict(job_dict)
+        JobPd.to_sql('First_bucket', self.engine, if_exists = 'append')
+        
+   
+
+
         
         
                     
@@ -232,5 +238,8 @@ if __name__ == '__main__':
     bot.job_search()
     bot.enter_jobs()
     bot.info_scrape()
-    bot.data_edit()
+    # bot.data_upload()
+    # bot.data_edit()
 
+#%%
+# %%
